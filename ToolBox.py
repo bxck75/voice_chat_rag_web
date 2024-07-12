@@ -48,16 +48,7 @@ class LLMChatBot:
         self.repo_url = 'https://github.com/langchain-ai/langchain'
         self.default_system_prompt = prompts['default_rag_prompt']
         self.conv_id = None
-        self.latest_splitter = None
-        self.setup_folders()
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name="all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}
-        )
-        self.create_vectorstore_from_github()
 
-        self.setup_retriever()
         self.setup_tts()
         self.setup_speech_recognition()
 
@@ -159,22 +150,6 @@ class LLMChatBot:
         result=self.chatbot.new_conversation(switch_to=True, system_prompt=self.default_system_prompt,  modelIndex=1)
         return result
     
-    def split_documents(self, documents: list,chunk_s=512,chunk_o=0):
-            split_docs = []
-            for doc in documents:
-                ext = os.path.splitext(getattr(doc, 'source', '') or getattr(doc, 'filename', ''))[1].lower()
-                if ext == '.py':
-                    splitter = RecursiveCharacterTextSplitter.from_language(language=Language.PYTHON, chunk_size=chunk_s, chunk_overlap=chunk_o)
-                elif ext in ['.md', '.markdown']:
-                    splitter = RecursiveCharacterTextSplitter.from_language(language=Language.MARKDOWN, chunk_size=chunk_s, chunk_overlap=chunk_o)
-                elif ext in ['.html', '.htm']:
-                    splitter = RecursiveCharacterTextSplitter.from_language(language=Language.HTML, chunk_size=chunk_s, chunk_overlap=chunk_o)
-                else:
-                    splitter = CharacterTextSplitter(chunk_size=chunk_s, chunk_overlap=chunk_o, add_start_index=True)
-                
-                split_docs.extend(splitter.split_documents([doc]))
-            return split_docs,splitter
-    
     def listen_for_speech(self):
         with speech_recognition.Microphone() as source:
             print("Listening...")
@@ -211,78 +186,6 @@ class LLMChatBot:
     @staticmethod
     def Play(file_path):
         playsound(file_path)
-
-    def add_documents_folder(self, folder_path):
-        for root, _, files in os.walk(folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                self.add_document(file_path)
-
-    def add_document(self, file_path):
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-            document = Document(page_content=content)
-            self.vector_store.add_documents([document])
-
-    def add_document_from_url(self, url):
-        documents=[]
-        split_docs=[]
-        chunk_s=512
-        chunk_o=0
-
-        response = requests.get(url)
-        if response.status_code == 200:
-            content = response.text
-            document = Document(page_content=content)
-            self.vector_store.add_documents([document])
-        else:
-            splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_s,
-            chunk_overlap=chunk_o,
-            separators=["\n\n", "\n", " ", ""]
-        )
-        documents.append(document)
-        for doc in documents:
-            split_docs.extend(splitter.split_documents([doc]))
-        self.latest_splitter = splitter
-        return split_docs
-
-    def create_vectorstore_from_github(self):
-        documents = self.load_documents_from_github(self.repo_url)
-        split_docs = self.split_documents(documents)
-        self.vector_store = FAISS.from_documents(split_docs, self.embeddings)
-
-
-    def setup_retriever(self):
-        self.retriever = ContextualCompressionRetriever(
-            retriever=create_retrieval_chain(self.vector_store),
-            compressor=DocumentCompressorPipeline(
-                transformers=[
-                    EmbeddingsRedundantFilter(embeddings=self.embeddings),
-                    EmbeddingsFilter(embeddings=self.embeddings)
-                ]
-            )
-        )
-
-    def retrieve_documents(self, query):
-        return self.retriever.retrieve(query)
-
-    def combine_documents(self, documents):
-        combined_chain = create_stuff_documents_chain()
-        return combined_chain(documents)
-
-    def process_query(self, query):
-        retrieved_docs = self.retrieve_documents(query)
-        combined_docs = self.combine_documents(retrieved_docs)
-        return combined_docs
-
-    def interactive_mode(self):
-        while True:
-            user_input = input("You: ")
-            if user_input.lower() in ["exit", "quit"]:
-                break
-            response = self(user_input)
-            print(f"Bot: {response}")
 
 # Example usage:
 if __name__ == "__main__":

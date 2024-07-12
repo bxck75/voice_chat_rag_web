@@ -1,0 +1,402 @@
+[
+    {
+        "name": "Profile-0",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-2",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-3",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-4",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-5",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-6",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-7",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-8",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-9",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-10",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-11",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-12",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-13",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-14",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-15",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-16",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-17",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-18",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-19",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-20",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-21",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-22",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-23",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-24",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-25",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-26",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-27",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-28",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-29",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-30",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-31",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-32",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-33",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-34",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-35",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-36",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-37",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-38",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-39",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-40",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-41",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-42",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-43",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-44",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-45",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-46",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-47",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-48",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-49",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-50",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-51",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-52",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-53",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-54",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-55",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-56",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-57",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-58",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-59",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-60",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-61",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-62",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-63",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-64",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-65",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-66",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-67",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-68",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-69",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-70",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-71",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-72",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-73",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-74",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-75",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-76",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-77",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-78",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-79",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-80",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-81",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-82",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-83",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-84",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-85",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-86",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-87",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-88",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-89",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-90",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-91",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-92",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-93",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-94",
+        "voice": "cmu_us_slt"
+    },
+    {
+        "name": "Profile-95",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-96",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-97",
+        "voice": "cmu_us_rms"
+    },
+    {
+        "name": "Profile-98",
+        "voice": "cmu_us_awb"
+    },
+    {
+        "name": "Profile-99",
+        "voice": "cmu_us_bdl"
+    },
+    {
+        "name": "Profile-100",
+        "voice": "cmu_us_awb"
+    }
+]

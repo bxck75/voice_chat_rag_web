@@ -115,10 +115,6 @@ class LLMChatBot:
     def setup_speech_recognition(self):
         self.recognizer = speech_recognition.Recognizer()
     
-    def setup_folders(self):
-        self.dirs = ["test_input"]
-        for d in self.dirs:
-            os.makedirs(d, exist_ok=True)
 
     def setup_tts(self, model_name="tts_models/en/ljspeech/fast_pitch"):
         self.tts = TTS(model_name=model_name)
@@ -126,10 +122,10 @@ class LLMChatBot:
     def chat(self, message):
         return self.chatbot.chat(message)
     
-    def query(self,message):
+    def query(self,message, web_search=False, stream=False,use_cache=True):
         return self.chatbot.query(
             text=message,
-            web_search = False,
+            web_search = web_search,
             temperature = 0.1,
             top_p = 0.95,
             repetition_penalty = 1.2,
@@ -139,20 +135,65 @@ class LLMChatBot:
             max_new_tokens = 1024,
             stop = ["</s>"],
             return_full_text = False,
-            stream = False,
+            stream = stream,
             _stream_yield_all = False,
             use_cache = False,
             is_retry = False,
             retry_count = 5,
             conversation = None
         )
+    
+    def stream_response(self, message):
+        for resp in self.query(message, stream=True):
+            rp(resp)
+
+    def web_search(self, query):
+        query_result = self.query(query, web_search=True)
+        results = []
+        for source in query_result.web_search_sources:
+            results.append({
+                'link': source.link,
+                'title': source.title,
+                'hostname': source.hostname
+            })
+        return results
+
+    def create_new_conversation(self, switch_to=True, system_prompt=""):
+        self.chatbot.new_conversation(switch_to=switch_to, modelIndex=self.current_model, system_prompt=system_prompt)
+
+    def get_remote_conversations(self):
+        return self.chatbot.get_remote_conversations(replace_conversation_list=True)
+
+    def get_local_conversations(self):
+        return self.chatbot.get_conversation_list()
+
+    def get_available_models(self):
+        return self.chatbot.get_available_llm_models()
+
+    def switch_model(self, index):
+        self.chatbot.switch_llm(index)
+
+    def switch_conversation(self, id):
+        self.conv_id = id
+        self.chatbot.change_conversation(self.conv_id)
+
+    def get_assistants(self):
+        return self.chatbot.get_assistant_list_by_page(1)
+
+    def switch_role(self, system_prompt, model_id=1):
+        self.chatbot.delete_all_conversations()
+        self.check_conv_id = self.chatbot.new_conversation(switch_to=True, system_prompt=system_prompt,  modelIndex=model_id)
+        return self.check_conv_id
+    
     def __run__(self, message):
 
         return self.query(message)
     
-    def __call__(self, message,system_prompt,model,):
+    def __call__(self, message):
         if not self.conversation_id:
-            self.conversation_id = self.chatbot.new_conversation(modelIndex=self.current_model,system_prompt=self.current_system_prompt,switch_to=True)
+            self.conversation_id = self.chatbot.new_conversation(modelIndex=self.current_model,
+                                                                 system_prompt=self.current_system_prompt,
+                                                                 switch_to=True)
         return self.chat(message)
 
 class AdvancedVectorStore:
@@ -164,14 +205,27 @@ class AdvancedVectorStore:
                  chunk_overlap=0, 
                  device='cpu',
                  normalize_embeddings=True,
-                 log_level=logging.INFO, 
-                 log_file='llm_chatbot.log'):
+                 log_level=logging.INFO,
+                 log_file='llm_chatbot.log',
+                 logs_dir='./logs',
+                 test_input='./test_input',
+                 test_output='./test_output',
+                 storage_dir='./vectorstore',
+                 knowledge_dir='./knowledge',
+                 repos_dir='./repos'
+    ):
 
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.device = device
         self.basic_splitter= RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
-        self.storage_path='./vectorstore'
+        self.storage_dir=storage_dir
+        self.test_input=test_input
+        self.test_output=test_output
+        self.repos_dir=repos_dir
+        self.knowledge_dir=knowledge_dir
+        self.logs_dir=logs_dir
+        self.log_file=log_file
         self.documents: List[Document] = []
         self.llm_chatbot = LLMChatBot(email, password) if email and password else None
         self.embeddings = HuggingFaceEmbeddings(
@@ -181,8 +235,9 @@ class AdvancedVectorStore:
         )
         self.vectorstore, self.docstore, self.index = self.create_indexed_vectorstore(self.chunk_size)
         self.document_count = 0
-        self.chunk_count = 0        
-        self.setup_logging(log_level,log_file)
+        self.chunk_count = 0
+        self.setup_folders()     
+        self.setup_logging(log_level,os.path.join(self.logs_dir,self.log_file))
         self.logger.info("Initializing AdvancedVectorStore")
         self.set_bot_role()
     
@@ -206,14 +261,25 @@ class AdvancedVectorStore:
         self.logger.addHandler(fh)
         self.logger.info("Done setting up logger for {__name__} [AdvancedVectorStore]")
         
+    def setup_folders(self):
+        self.dirs = [
+            self.test_input,
+            self.test_output,
+            self.logs_dir,
+            self.storage_dir,
+            self.knowledge_dir,
+            self.repos_dir
+        ]
+        for d in self.dirs:
+            os.makedirs(d, exist_ok=True)
 
     def set_bot_role(self,prompt='default_rag_prompt',context="",history=""):
         self.logger.info(f"Setting Bot Role!\n[{prompts[prompt]}]")
         self.llm_chatbot.current_system_prompt = prompts[prompt].replace("<<VSCONTEXT>>",context).replace("<<WSCONTEXT>>",history)
-        result=self.llm_chatbot("Confirm you understand ACT and ROLE and TASK",
-                                system_prompt=self.llm_chatbot.current_system_prompt,
-                                model=1)
+        self.llm_chatbot.create_new_conversation(system_prompt=self.llm_chatbot.current_system_prompt, switch_to=True)
+        result=self.llm_chatbot("Confirm you understand ACT and ROLE and TASK")
         self.logger.info(f"Test results chatbot role set:{result}")
+        rp(f"[Result:{result}]")
         
 
     def load_documents(self, directory: str) -> None:
@@ -247,17 +313,17 @@ class AdvancedVectorStore:
     def split_documents(self) -> None:
         """Split documents using appropriate splitters for each file type."""
         splitters = {
-            ".py": RecursiveCharacterTextSplitter.from_language(language=Language.PYTHON, chunk_size=2000, chunk_overlap=200),
-            ".txt": RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200),
-            ".pdf": RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200),
-            ".html": RecursiveCharacterTextSplitter.from_language(language=Language.HTML, chunk_size=2000, chunk_overlap=200),
-            ".docx": RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+            ".py": RecursiveCharacterTextSplitter.from_language(language=Language.PYTHON, chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap),
+            ".txt": RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap),
+            ".pdf": RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap),
+            ".html": RecursiveCharacterTextSplitter.from_language(language=Language.HTML, chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap),
+            ".docx": RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
         }
 
         split_docs = []
         for doc in self.documents:
             file_extension = os.path.splitext(doc.metadata.get("source", ""))[1].lower()
-            splitter = splitters.get(file_extension, RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200))
+            splitter = splitters.get(file_extension, RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap))
             split_docs.extend(splitter.split_documents([doc]))
 
         self.documents = split_docs
@@ -383,11 +449,17 @@ class AdvancedVectorStore:
         """Save the vectorstore to disk."""
         if not self.vectorstore:
             raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
+        self.logger.info("Saving Faiss...")
         self.vectorstore.save_local(path)
+        self.logger.info("Done! Saving Faiss...{path}")
 
     def load_vectorstore(self, path: str) -> None:
         """Load the vectorstore from disk."""
-        self.vectorstore = FAISS.load_local(path, self.embeddings)
+        self.logger.info("Loading Faiss...")
+        self.vectorstore = FAISS.load_local(folder_path=path, 
+                                            embeddings=self.embeddings,
+                                            allow_dangerous_deserialization=True)
+        self.logger.info("Done! Loading Faiss...{path}")
 
     def create_retrieval_chain(self, prompt: str = "default_rag_prompt", retriever: Optional[Any] = None) -> Any:
         """Create a retrieval chain using the specified prompt and retriever."""
@@ -404,30 +476,39 @@ class AdvancedVectorStore:
     def load_documents_folder(self, folder_path):
             rp("Loading documents from cloned repository")
             self.load_documents(folder_path)
-
-            rp("Splitting documents")
+            rp(f"Splitting {len(self.documents)} documents")
             self.split_documents()
-            rp("Adding documents to vectorstore")
+            rp(f"Adding {len(self.documents)} document chunks to vectorstore")
             self.add_documents(self.documents)
 
     def load_github_repo(self, repo_url: str) -> None:
         """
         Clone a GitHub repository to a temporary folder, load documents, and remove the folder.
         """
-        with tempfile.TemporaryDirectory() as temp_dir:
-            rp(f"Cloning repository {repo_url} to {temp_dir}")
-            Repo.clone_from(repo_url, temp_dir)
+        split=repo_url.split('/')
+        repo_name = split.pop()
+        author_name = split.pop()
+        new_repo_path=os.path.join(self.repos_dir,f"{author_name}_{repo_name}")
+
+        if not os.path.exists(new_repo_path):
+            rp(f'Cloning repository {repo_url} to {new_repo_path}')
+            Repo.clone_from(repo_url, new_repo_path)
             
             rp("Loading documents from cloned repository")
-            self.load_documents(temp_dir)
+            self.load_documents(new_repo_path)
             
-            rp("Splitting documents")
+            rp(f"Splitting {len(self.documents)} documents into chunks")
             self.split_documents()
             
-            rp("Adding documents to vectorstore")
+            rp(f"Adding {len(self.documents)} documents to vectorstore")
             self.add_documents(self.documents)
-            
-        rp("Temporary folder removed")
+            self.save_vectorstore(self.storage_dir)
+            self.load_vectorstore(self.storage_dir)
+            rp("Temporary folder removed")
+        else:
+            rp(f"Repository {repo_url} already exists in {new_repo_path}")
+            self.load_vectorstore(self.storage_dir)
+
     def get_all_documents(self) -> List[Document]:
         """
         Get all documents from the vectorstore.
@@ -671,16 +752,17 @@ if __name__ == "__main__":
 
     # Clone a GitHub repository and load its contents
     
-    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/TTS/tts")
-    avs.load_github_repo("https://github.com/bxck75/agents_of_doom")
-    avs.save_vectorstore(path=avs.storage_path)
-    avs.load_vectorstore(path=avs.storage_path)
+    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/langchain_huggingface")
+    # avs.load_github_repo("https://github.com/bxck75/voice_chat_rag_web")
+    avs.save_vectorstore(path=avs.storage_dir)
+    avs.load_vectorstore(path=avs.storage_dir)
     # rp document and chunk counts
     rp(f"Total documents: {avs.document_count}")
     rp(f"Total chunks: {avs.chunk_count}")
-    retriever=avs.get_multi_query_compression_retriever()
+    retriever=avs.get_basic_retriever()
+    retriever_comp=avs.get_multi_query_compression_retriever()
     q="Demonstrate your knowledge of faiss in a python  OOP example script"
-    rel_docs=retriever.get_relevant_documents(query=q)
+    rel_docs=retriever.invoke(input=q)
       # Start the advanced RAG chatbot
     avs.advanced_rag_chatbot()
 
