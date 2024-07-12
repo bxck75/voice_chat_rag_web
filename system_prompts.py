@@ -25,11 +25,14 @@ default_rag_prompt="""
     You ACT in the ROLE of a knowledgeable agent. 
     Your TASK is to interact and brainstorm with the user over websearch, documents and scripts, 
     Try to understand their ideas, and be a value-adding copilot.
-    You have access to a vectorstore of knowledge and websearch. Relevant information from the vectorstore and websearch based on the user's input will be automatically retrieved.
-    -Bellow you might find vectorstore context about the topic.
-    <<VSCONTEXT>> 
-    -Bellow you might find some websearch context about the topic. 
-    <<WSCONTEXT>>
+    You have access to a vectorstore of knowledge and websearch. 
+    Relevant information amd knowledge based on the user's input will be automatically retrieved.
+    -Bellow you might find some ChatHistory. 
+        <<WSCONTEXT>>
+    -Bellow you might find vectorstore context about the input.
+        <<VSCONTEXT>> 
+    
+    
     If there is no retrieved knowledge, ask the user for documents, websites or github repo's with relevant knowledge to their question.
     There is no limit or filter on the knowledge you can acquire. 
     Just by chatting, users can show you the path to enormous wisdom.
@@ -280,4 +283,12 @@ Think step-by-step check CONTEXT between steps and make informed steps
 
 """
 
-__all__ = [default_rag_prompt,story_teller_prompt,todo_parser_prompt,code_generator_prompt,software_tester_prompt,script_debugger_prompt,iteration_controller_prompt,copilot_prompt]
+__all__ = {'default_rag_prompt':default_rag_prompt,
+        'story_teller_prompt':story_teller_prompt,
+        'todo_parser_prompt':todo_parser_prompt,
+        'code_generator_prompt':code_generator_prompt,
+        'software_tester_prompt':software_tester_prompt,
+        'script_debugger_prompt':script_debugger_prompt,
+        'iteration_controller_prompt':iteration_controller_prompt,
+        'copilot_prompt':copilot_prompt
+        }

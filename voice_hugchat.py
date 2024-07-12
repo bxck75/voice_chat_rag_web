@@ -8,7 +8,7 @@ from hugchat.message import Message
 from hugchat.types.assistant import Assistant
 from hugchat.types.model import Model
 from hugchat.types.message import MessageNode, Conversation
-from new_voice_document_processor import DocumentProcessor
+from voice_document_processor import DocumentProcessor
 from typing import Any, List, Mapping, Optional
 from system_prompts import __all__ as prompts
 import speech_recognition
@@ -16,7 +16,8 @@ from TTS.api import TTS
 from rich import print as rp
 import time
 from playsound import playsound
-
+from voice_faiss import GithubFAISSRetriever
+from langchain_community.llms.huggingface_hub import HuggingFaceHub
 load_dotenv(find_dotenv())
 warnings.filterwarnings("ignore")
 os.environ["USER_AGENT"] = os.getenv("USER_AGENT")
@@ -29,13 +30,15 @@ class EnhancedChatBot:
         self.password = password
         self.default_llm = default_llm
         self.cookie_path_dir = cookie_path_dir
-        self.system_prompt = self.prompts[0] # default_system_prompt
+        self.system_prompt = self.prompts["story_teller_prompt"] # default_system_prompt
         self.cookies = self.login()
-        self.bot = hugchat.ChatBot(cookies=self.cookies.get_dict(), 
-                                       default_llm = self.default_llm
-                                       )
+        self.bot = hugchat.ChatBot(cookies=self.cookies.get_dict(),                                    
+                                    default_llm = self.default_llm,
+                                    system_prompt = self.system_prompt
+                                )
         self.conv_id = None
-        
+        self.document_processor('https://github.com/bxck75/RagIt')
+
 
     def login(self):
         print("Attempting to log in...")
@@ -75,20 +78,22 @@ class EnhancedChatBot:
             print("Manual login failed!")
 
 
-    def document_processor(self, repo_url=None, document=None, delete=False):
+    def document_processor(self,repo_url=None, document=None, delete=False, ):
         self.document_ids = {} 
         if not hasattr(self, 'processor'):
-            self.processor = DocumentProcessor(llm=self.bot)
+            #self.processor = DocumentProcessor(llm=self.bot)
+            return GithubFAISSRetriever(repo_url=repo_url, bot=self.bot, k=4, sim=0.77)
+            #input = "What is the difference between a transformer and a recurrent neural network?"
+            #response = self.processor.retrieve(input=input)
 
-        if repo_url:
-            documents = self.processor.load_documents_from_github(repo_url)
+            """ documents = self.processor.load_documents_from_github(repo_url)
             split_docs = self.processor.split_documents(documents)
             embeddings = self.processor.embed_documents(split_docs)
             self.processor.create_vectorstore(split_docs, embeddings)
-            self.processor.setup_retriever()
+            self.processor.setup_retriever() """
 
-        if delete == True and document:
-            self.processor.delete_document(document)
+            if delete == True and document:
+                self.processor.delete_document(document)
 
 
     def __call__(self, text): 
@@ -114,7 +119,7 @@ class EnhancedChatBot:
         return result
 
     def retrieve_context(self, query: str):
-        results = self.processor.retrieve_similar_documents(query)
+        results = self.processor.retrieve(query)
         context = "\n".join([doc.page_content for doc in results])
         return context
     
@@ -211,9 +216,10 @@ class EnhancedChatBot:
     def continuous_voice_chat(self, story_teller_prompt="You are a helpful assistant."):
         self.input_method=None
         while True:
-            if self.input_method == None:
-                print("Speak your query (or say 'exit' to quit):")
-                self.input_method=self.listen_for_speech()
+            
+
+            print("Speak your query (or say 'exit' to quit):")
+            self.input_method=self.listen_for_speech()
             
             # we start in voice mode
             query = self.input_method
@@ -221,33 +227,33 @@ class EnhancedChatBot:
             if query is None:
                 continue
 
-            if query.lower() == "voice":
-                print("Speak your query (or say 'exit' to quit):")
-                self.input_method = self.listen_for_speech()
-                
-
-            if query.lower() == "type":
-                self.input_method = input("Type your question(or type 'exit' to quit): \n")
-                
 
             if 'switch prompt ' in query.lower():
                 q = query.lower()
                 new_prompt = q.split("switch prompt ").pop().replace(" ", "_")
+                rp(new_prompt)
                 # try fetch the prompt key by name value
-                try:
+                if new_prompt in prompts:
                     new_prompt_id = prompts.index(new_prompt)
                     rp(f"new prompt key:{new_prompt_id}")
-                except ValueError:
+                else:
                     rp(f"{new_prompt} not found in prompts list! set to key 0!(default_system_prompt)")
                     new_prompt_id = 0
                 
                 self.switch_role(new_prompt_id)
-                query=''
                 self.optimized_tts(f"Switched Role to {new_prompt}!")
                 self.play_mp3('output.wav')
-                
-                
+                continue
 
+            if query.lower() == "voice":
+                print("Speak your query (or say 'exit' to quit):")
+                self.input_method = self.listen_for_speech()
+                continue
+            
+            if query.lower() == "type":
+                self.input_method = input("Type your question(or type 'exit' to quit): \n")
+                continue
+            
             if query.lower() == 'exit':
                 rp("Goodbye!")
                 self.optimized_tts("Ok, exiting!")
