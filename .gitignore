@@ -19,3 +19,7 @@ test/
 result/
 repos/
 fish-diffusion/
+wandb/
+test_input/
+knowledge/
+test_output/

@@ -5,6 +5,8 @@ import webbrowser
 from tkinter import Toplevel
 import warnings
 import faiss,logging
+import numpy as np
+import wandb
 from typing import List, Dict, Any, Optional, Union
 from git import Repo
 import plotly.graph_objects as go
@@ -16,10 +18,17 @@ from rich.progress import Progress, TextColumn, BarColumn, TimeRemainingColumn
 from dotenv import load_dotenv, find_dotenv
 import speech_recognition
 from TTS.api import TTS
+from sklearn.decomposition import PCA
 from playsound import playsound
 from hugchat import hugchat
 from hugchat.login import Login
 from langchain_core.documents import Document
+
+from langchain_community.llms.huggingface_text_gen_inference import (
+        HuggingFaceTextGenInference,
+    )
+from langchain_community.llms.huggingface_endpoint import HuggingFaceEndpoint
+from langchain_community.llms.huggingface_hub import HuggingFaceHub
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 from langchain_community.document_loaders import (
@@ -29,6 +38,7 @@ from langchain_community.document_loaders import (
     TextLoader,
     PythonLoader
 )
+from langchain.retrievers import TimeWeightedVectorStoreRetriever
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain.text_splitter import RecursiveCharacterTextSplitter, Language,CharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -39,29 +49,43 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain.retrievers.document_compressors import LLMChainExtractor, DocumentCompressorPipeline
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from langchain.retrievers.document_compressors import EmbeddingsFilter
+from langchain_community.llms.self_hosted_hugging_face import SelfHostedHuggingFaceLLM
+import plotly.graph_objs as go
 
+
+from langchain.chains import LLMChain
 # Load environment variables
 load_dotenv(find_dotenv())
 warnings.filterwarnings("ignore")
+os.environ['FAISS_NO_AVX2'] = '1'
 os.environ["USER_AGENT"] = os.getenv("USER_AGENT")
-
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+wandb.require("core")
 # Import system prompts
 from system_prompts import __all__ as prompts
 
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, GPT2LMHeadModel, GPT2TokenizerFast
+from langchain_huggingface import HuggingFacePipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+
+
 
 class LLMChatBot:
-    def __init__(self, email, password, cookie_path_dir='./cookies/', default_llm=1,default_system_prompt='default_rag_prompt'):
+    def __init__(self, email, password, cookie_path_dir='./cookies/', default_llm=1, default_system_prompt='default_rag_prompt'):
         self.email = email
         self.password = password
         self.current_model = 1
         self.current_system_prompt=default_system_prompt
         self.cookie_path_dir = cookie_path_dir
         self.cookies = self.login()
+        self.default_llm = default_llm
         self.chatbot = hugchat.ChatBot(cookies=self.cookies.get_dict(), default_llm=default_llm,system_prompt=prompts[default_system_prompt])
         self.conversation_id=None
         self.check_conv_id(self.conversation_id)
         rp("[self.conversation_id:{self.conversation_id}]")
-    
+
+
     def check_conv_id(self, id=None):
         if not self.conversation_id and not id:
             self.conversation_id = self.chatbot.new_conversation(modelIndex=self.current_model,system_prompt=self.current_system_prompt)
@@ -115,7 +139,6 @@ class LLMChatBot:
     def setup_speech_recognition(self):
         self.recognizer = speech_recognition.Recognizer()
     
-
     def setup_tts(self, model_name="tts_models/en/ljspeech/fast_pitch"):
         self.tts = TTS(model_name=model_name)
 
@@ -158,8 +181,8 @@ class LLMChatBot:
             })
         return results
 
-    def create_new_conversation(self, switch_to=True, system_prompt=""):
-        self.chatbot.new_conversation(switch_to=switch_to, modelIndex=self.current_model, system_prompt=system_prompt)
+    def create_new_conversation(self, switch_to=True):
+        return self.chatbot.new_conversation(switch_to=switch_to, modelIndex=self.current_model, system_prompt=self.current_system_prompt)
 
     def get_remote_conversations(self):
         return self.chatbot.get_remote_conversations(replace_conversation_list=True)
@@ -186,7 +209,10 @@ class LLMChatBot:
         return self.check_conv_id
     
     def __run__(self, message):
-
+        if not self.conversation_id:
+            self.conversation_id = self.chatbot.new_conversation(modelIndex=self.current_model,
+                                                                 system_prompt=self.current_system_prompt,
+                                                                 switch_to=True)
         return self.query(message)
     
     def __call__(self, message):
@@ -195,6 +221,9 @@ class LLMChatBot:
                                                                  system_prompt=self.current_system_prompt,
                                                                  switch_to=True)
         return self.chat(message)
+
+
+
 
 class AdvancedVectorStore:
     def __init__(self, 
@@ -206,7 +235,7 @@ class AdvancedVectorStore:
                  device='cpu',
                  normalize_embeddings=True,
                  log_level=logging.INFO,
-                 log_file='llm_chatbot.log',
+                 log_file='AdvancedVectorStore.log',
                  logs_dir='./logs',
                  test_input='./test_input',
                  test_output='./test_output',
@@ -226,14 +255,24 @@ class AdvancedVectorStore:
         self.knowledge_dir=knowledge_dir
         self.logs_dir=logs_dir
         self.log_file=log_file
+        self.doc_ids = []
         self.documents: List[Document] = []
-        self.llm_chatbot = LLMChatBot(email, password) if email and password else None
         self.embeddings = HuggingFaceEmbeddings(
             model_name=embedding_model,
             model_kwargs={'device': self.device},
             encode_kwargs={'normalize_embeddings': normalize_embeddings}
         )
+
+        self.qwen_llm = HuggingFaceHub(repo_id="Qwen/Qwen2-0.5B-Instruct", model_kwargs={"temperature": 0.5, "max_length": 512})
+        self.llm = HuggingFaceHub(repo_id="google-t5/t5-small", model_kwargs={"temperature": 0.5, "max_length": 512})
+        self.alpaca_llm = HuggingFaceHub(repo_id="reasonwang/google-flan-t5-small-alpaca", model_kwargs={"temperature": 0.1, "max_length": 512})
+        self.chatbot_llm = LLMChatBot(email, password, default_system_prompt= 'copilot_prompt') if email and password else None
+
+        rp("create_indexed_vectorstore:")
+        print(self.alpaca_llm("What is Deep Learning?"))  
+
         self.vectorstore, self.docstore, self.index = self.create_indexed_vectorstore(self.chunk_size)
+
         self.document_count = 0
         self.chunk_count = 0
         self.setup_folders()     
@@ -259,7 +298,7 @@ class AdvancedVectorStore:
         # Add handlers to logger
         self.logger.addHandler(ch)
         self.logger.addHandler(fh)
-        self.logger.info("Done setting up logger for {__name__} [AdvancedVectorStore]")
+        self.logger.info("Done settingload_documents_folder up logger for {__name__} [AdvancedVectorStore]")
         
     def setup_folders(self):
         self.dirs = [
@@ -274,12 +313,14 @@ class AdvancedVectorStore:
             os.makedirs(d, exist_ok=True)
 
     def set_bot_role(self,prompt='default_rag_prompt',context="",history=""):
-        self.logger.info(f"Setting Bot Role!\n[{prompts[prompt]}]")
-        self.llm_chatbot.current_system_prompt = prompts[prompt].replace("<<VSCONTEXT>>",context).replace("<<WSCONTEXT>>",history)
-        self.llm_chatbot.create_new_conversation(system_prompt=self.llm_chatbot.current_system_prompt, switch_to=True)
-        result=self.llm_chatbot("Confirm you understand ACT and ROLE and TASK")
-        self.logger.info(f"Test results chatbot role set:{result}")
-        rp(f"[Result:{result}]")
+        self.chatbot_llm.current_system_prompt = prompts[prompt].replace("<<VSCONTEXT>>",context).replace("<<WSCONTEXT>>",history)
+        self.current_conversation_id=self.chatbot_llm.chatbot.new_conversation(system_prompt=self.chatbot_llm.current_system_prompt,
+                                                                               modelIndex=self.chatbot_llm.current_model,
+                                                                               switch_to=True)
+        #self.logger.info(f"Setting Bot Role!\n[{prompt}]")
+        """ result=self.chatbot_llm("Confirm you understand the TASK.")
+        self.logger.info(f"Test results chatbot role set:{result}") """
+        #rp(f"[Result:{result}]")
         
 
     def load_documents(self, directory: str) -> None:
@@ -347,68 +388,154 @@ class AdvancedVectorStore:
             {}
         )
         rp("Indexed vectorstore created.")
-        return vectorstore,docstore,index
+        return vectorstore, docstore, index
 
+    
+    ''' def generate_3d_scatterplot_wandb(self, num_points=1000, run_name="vector_store_visualization", context_window=0, chat_history_length=0):
+        """
+        Generate a 3D scatter plot of the vector store content using plotly and log it to wandb.
+        Also tracks context window and chat history length.
+        :param num_points: Maximum number of points to plot (default: 1000)
+        :param run_name: Name for the wandb run (default: "vector_store_visualization")
+        :param context_window: Size of the context window
+        :param chat_history_length: Length of the chat history
+        :return: None (logs the plot to wandb)
+        """
+        # Initialize a new wandb run
+        wandb.init(project="vector_store_visualization", name=run_name)
+        all_docs = self.get_all_documents()
+        if not all_docs:
+            raise ValueError("No documents found in the vector store.")
+        # Extract vectors from documents
+        vectors = []
+        for doc in all_docs:
+            if hasattr(doc, 'embedding') and doc.embedding is not None:
+                vectors.append(doc.embedding)
+            else:
+                vectors.append(self.embeddings.embed_query(doc.page_content))
+        vectors = np.array(vectors)
+        # If we have more vectors than requested points, sample randomly
+        if len(vectors) > num_points:
+            indices = np.random.choice(len(vectors), num_points, replace=False)
+            vectors = vectors[indices]
+        # Perform PCA to reduce to 3 dimensions
+        pca = PCA(n_components=3)
+        vectors_3d = pca.fit_transform(vectors)
+        # Create the 3D scatter plot using plotly
+        trace = go.Scatter3d(
+            x=vectors_3d[:, 0],
+            y=vectors_3d[:, 1],
+            z=vectors_3d[:, 2],
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=vectors_3d[:, 2],
+                colorscale='Viridis',
+                opacity=0.8
+            )
+        )
+        layout = go.Layout(
+            title='3D Scatter Plot of Vector Store Content',
+            scene=dict(
+                xaxis_title='PCA Component 1',
+                yaxis_title='PCA Component 2',
+                zaxis_title='PCA Component 3'
+            ),
+            width=900,
+            height=700,
+        )
+        fig = go.Figure(data=[trace], layout=layout)
+        # Log the plot to wandb
+        wandb.log({"vector_store_3d_scatter": wandb.plotly.plot(fig)})
+        # Log context window and chat history length
+        wandb.log({
+            "context_window": context_window,
+            "chat_history_length": chat_history_length
+        })
+        rp(f"Generated 3D scatter plot with {len(vectors)} points. Logged to wandb.")
+        rp(f"Context Window: {context_window}, Chat History Length: {chat_history_length}")
+        # Finish the wandb run
+        wandb.finish() '''
+       
+    def get_self_query_retriever(self, k: int = 4) -> SelfQueryRetriever:
+        """Get a SelfQueryRetriever."""
+        if not self.vectorstore:
+            raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
+        return SelfQueryRetriever.from_llm(
+            self.chatbot_llm.chatbot,
+            self.vectorstore,
+            document_contents="Document about various topics.",
+            metadata_field_info=[],
+            search_kwargs={"k": k}
+        )
 
+    
+    def get_contextual_t5_compression_retriever(self, k: int = 4, similarity_threshold=0.78) -> ContextualCompressionRetriever:
+        """Get a ContextualCompressionRetriever."""
+        base_compressor = LLMChainExtractor.from_llm(self.llm)
+        redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
+        relevant_filter = EmbeddingsFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
+        return ContextualCompressionRetriever(
+            name="CompressedRetriever",
+            base_compressor=DocumentCompressorPipeline(transformers=[self.basic_splitter, base_compressor, redundant_filter, relevant_filter]),
+            base_retriever=self.get_basic_retriever(k=k)
+        )
+    
+    def get_contextual_qwen_compression_retriever(self, k=4, similarity_threshold=0.78):
+        # Initialize the components for the compressor pipeline
+        base_compressor = LLMChainExtractor.from_llm(self.qwen_llm)
+        redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
+        relevant_filter = EmbeddingsFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
+        # Create the ContextualCompressionRetriever
+        return ContextualCompressionRetriever(
+            name="CompressedRetriever",
+            base_compressor= DocumentCompressorPipeline(transformers=[self.basic_splitter, base_compressor, redundant_filter, relevant_filter]),
+            base_retriever=self.get_basic_retriever(k=k)
+        )
+    
+    def get_contextual_compression_retriever(self, k: int = 4,similarity_threshold=0.78) -> ContextualCompressionRetriever:
+        """Get a ContextualCompressionRetriever."""
+        base_compressor = LLMChainExtractor.from_llm(self.alpaca_llm)
+        redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
+        relevant_filter = EmbeddingsFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
+        return ContextualCompressionRetriever(
+            name="CompressedRetriever",
+            base_compressor=DocumentCompressorPipeline(transformers=[self.basic_splitter, base_compressor, redundant_filter, relevant_filter]),
+            base_retriever=self.get_basic_retriever(k=k)
+        )
+    
+    
     def get_basic_retriever(self, k: int = 4) -> VectorStore:
         """Get a basic retriever from the vectorstore."""
         if not self.vectorstore:
             raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
         return self.vectorstore.as_retriever(search_kwargs={"k": k})
-
     def get_multi_query_retriever(self, k: int = 4) -> MultiQueryRetriever:
         """Get a MultiQueryRetriever."""
         if not self.vectorstore:
             raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
         return MultiQueryRetriever.from_llm(
             retriever=self.vectorstore.as_retriever(search_kwargs={"k": k}),
-            llm=self.llm_chatbot
+            llm=self.chatbot_llm
         )
-
-    def get_self_query_retriever(self, k: int = 4) -> SelfQueryRetriever:
-        """Get a SelfQueryRetriever."""
-        if not self.vectorstore:
-            raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
-        return SelfQueryRetriever.from_llm(
-            self.llm_chatbot.chatbot,
-            self.vectorstore,
-            document_contents="Document about various topics.",
-            metadata_field_info=[],
-            search_kwargs={"k": k}
-        )
-    def get_multi_query_compression_retriever(self, k=5, similarity_threshold=0.76):
-        """Get a ContextualCompressionRetriever."""
-        retriever = self.get_multi_query_retriever(k=k)
-        splitter = CharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap, separator=". ")
-        redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embeddings)
-        relevant_filter = EmbeddingsFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
-        pipeline_compressor = DocumentCompressorPipeline(
-            transformers=[splitter, redundant_filter, relevant_filter]
-        )
-        return ContextualCompressionRetriever(base_compressor=pipeline_compressor, base_retriever=retriever)
-
-    def get_contextual_compression_retriever(self, k: int = 4,similarity_threshold=0.78) -> ContextualCompressionRetriever:
-        """Get a ContextualCompressionRetriever."""
-        base_compressor = LLMChainExtractor.from_llm(self.llm_chatbot)
-        redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
-        relevant_filter = EmbeddingsFilter(embeddings=self.embeddings, similarity_threshold=similarity_threshold)
-        pipeline_compressor = DocumentCompressorPipeline(
-            transformers=[self.basic_splitter, base_compressor, redundant_filter, relevant_filter]
-        )
-        
-        return ContextualCompressionRetriever(
-            name="CompressedRetriever",
-            base_compressor=pipeline_compressor,
-            base_retriever=self.get_basic_retriever(k=k)
+    def get_timed_retriever(self, k=1, decay_rate=0.0000000000000000000000001):
+        return TimeWeightedVectorStoreRetriever(
+            vectorstore=self.vectorstore, decay_rate=decay_rate, k=k
         )
     
     def set_current_retriever(self,mode='basic',k=4,sim_rate=0.78):
         if mode == 'compressed':
             retriever = self.get_contextual_compression_retriever(k, sim_rate)
+        elif mode == 'qwen_compressed':
+            retriever = self.get_contextual_qwen_compression_retriever(k, sim_rate)
+        elif mode == 't5_compressed':
+            retriever = self.get_contextual_t5_compression_retriever(k, sim_rate)
         elif mode == 'self_query':
             retriever = self.get_self_query_retriever(k)
         elif mode == 'multi_query':
             retriever = self.get_multi_query_retriever(k)
+        elif mode == 'time':
+            retriever = self.get_timed_retriever(k=1)
         else:
             retriever = self.get_basic_retriever(k)
 
@@ -419,66 +546,236 @@ class AdvancedVectorStore:
         """Search the vectorstore using the specified retriever."""
         if not retriever:
             retriever = self.set_current_retriever(mode=mode, k=k, sim_rate=sim_rate)
-
         return retriever.get_relevant_documents(query)
 
     def add_documents(self, documents: List[Document]) -> None:
+        import uuid
+        
         """Add new documents to the existing vectorstore."""
-
         with Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("[green][progress.percentage]{task.percentage:>3.0f}%"),
             TimeRemainingColumn()
         ) as progress:
             task = progress.add_task("[cyan]Adding documents to vectorstore...", total=len(documents))
             
-            for doc in documents:
-                self.vectorstore.add_documents([doc])
+            for id, doc in enumerate(documents):
+                #self.vectorstore.add_documents([doc])
+                metadata = doc.metadata
+                if not metadata:
+                    metadata = {}
+
+                metadata["last_accessed_at"] = datetime.now()
+                new_doc = Document(page_content=doc.page_content, metadata=metadata)
+                id = str(uuid.uuid4())
+ 
+                self.logger.info(f"Added doc to docstore with id:{id}")
+                self.vectorstore.docstore.add({id: new_doc})
+                
+                self.doc_ids.append(id)
+                self.set_current_retriever(mode='time', k=1).add_documents([new_doc])
+                total = self.index.ntotal
+                #self.logger.info(f"Added doc to vectorstore{new_doc.metadata['last_accessed_at']} with {total} id's so far.")
                 progress.update(task, advance=1)
 
-        rp(f"Added {len(documents)} documents to the vectorstore.")
+        rp(f"Added {len(documents)} documents to the vectorstore with index in doc_ids.")
 
     def delete_documents(self, document_ids: List[str]) -> None:
         """Delete documents from the vectorstore by their IDs."""
-        if not self.vectorstore:
-            raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
-        self.vectorstore.delete(document_ids)
+
+        for id in document_ids:
+            #self.logger.info(f"[Deleting DocumenId{id}...]")
+            self.vectorstore.delete(document_ids)
+            #self.logger.info(f"[Done! Saving Faiss...{id}]")
 
     def save_vectorstore(self, path: str) -> None:
         """Save the vectorstore to disk."""
         if not self.vectorstore:
             raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
-        self.logger.info("Saving Faiss...")
+        #self.logger.info("[Saving Faiss...]")
         self.vectorstore.save_local(path)
-        self.logger.info("Done! Saving Faiss...{path}")
+        #self.logger.info(f"[Done! Saving Faiss to:{path}]")
 
     def load_vectorstore(self, path: str) -> None:
         """Load the vectorstore from disk."""
-        self.logger.info("Loading Faiss...")
+        #self.logger.info("Loading Faiss...")
         self.vectorstore = FAISS.load_local(folder_path=path, 
                                             embeddings=self.embeddings,
                                             allow_dangerous_deserialization=True)
-        self.logger.info("Done! Loading Faiss...{path}")
+        #self.logger.info(f"[Done! Loading Faiss from:{path}]")
 
     def create_retrieval_chain(self, prompt: str = "default_rag_prompt", retriever: Optional[Any] = None) -> Any:
         """Create a retrieval chain using the specified prompt and retriever."""
         if not retriever:
             retriever = self.get_basic_retriever()
         
-        combine_docs_chain = create_stuff_documents_chain(self.llm_chatbot.chatbot, prompt=prompts[prompt])
+        combine_docs_chain = create_stuff_documents_chain(self.chatbot_llm, prompt=prompts[prompt])
         return create_retrieval_chain(retriever, combine_docs_chain)
 
     def run_retrieval_chain(self, chain: Any, query: str) -> Dict[str, Any]:
         """Run a retrieval chain with the given query."""
         return chain.invoke({"input": query})
 
+    def generate_3d_scatterplot(self, num_points=1000):
+        """
+        Generate a 3D scatter plot of the vector store content and log it to wandb.
+        
+        :param num_points: Maximum number of points to plot (default: 1000)
+        :return: None (logs the plot to wandb)
+        """
+        all_docs = self.get_all_documents()
+
+        if not all_docs:
+            raise ValueError("No documents found in the vector store.")
+
+        # Extract vectors and metadata from documents
+        vectors = []
+        doc_ids = []
+        for doc in all_docs:
+            if hasattr(doc, 'embedding') and doc.embedding is not None:
+                vectors.append(doc.embedding)
+            else:
+                vectors.append(self.embeddings.embed_query(doc.page_content))
+            doc_ids.append(doc.metadata.get('id', 'Unknown'))
+
+        vectors = np.array(vectors)
+
+        # If we have more vectors than requested points, sample randomly
+        if len(vectors) > num_points:
+            indices = np.random.choice(len(vectors), num_points, replace=False)
+            vectors = vectors[indices]
+            doc_ids = [doc_ids[i] for i in indices]
+
+        # Perform PCA to reduce to 3 dimensions
+        pca = PCA(n_components=3)
+        vectors_3d = pca.fit_transform(vectors)
+
+
+        # Initialize wandb run
+        wandb.init(project="vector_store_visualization")
+
+        # Create the Plotly figure
+        fig = go.Figure(data=[go.Scatter3d(
+            x=vectors_3d[:, 0],
+            y=vectors_3d[:, 1],
+            z=vectors_3d[:, 2],
+            mode="markers",
+            marker=dict(
+                size=[28.666666666666668, 20.666666666666668, 15.333333333333334, 17.666666666666668, 19.0, 17.666666666666668, 26.0, 21.0, 21.666666666666668, 27.0, 21.666666666666668, 16.666666666666668, 27.0, 14.0, 29.666666666666668, 22.0, 16.0, 28.0, 27.0, 25.333333333333332],
+                color=[28.666666666666668, 20.666666666666668, 15.333333333333334, 17.666666666666668, 19.0, 17.666666666666668, 26.0, 21.0, 21.666666666666668, 27.0, 21.666666666666668, 16.666666666666668, 27.0, 14.0, 29.666666666666668, 22.0, 16.0, 28.0, 27.0, 25.333333333333332],
+                colorscale='Viridis',
+                showscale=True,
+                colorbar=dict(x=0),
+                cmin=14,
+                cmax=20
+            ),
+            text=self.doc_ids,
+            hoverinfo="text",
+            name="Document Vectors",
+        )])
+
+        # Update layout
+        fig.update_layout(
+            showlegend=True,
+            scene=dict(
+                xaxis_title="X Axis",
+                yaxis_title="Y Axis",
+                zaxis_title="Z Axis"
+            ),
+            width=1200,
+            height=1000,
+        )
+
+        # Log the plot to wandb
+        wandb.log({"3D Scatter Plot": fig})
+
+        # Finish the wandb run
+        wandb.finish()
+        """ 
+        # Update layout
+        fig.update_layout(
+            title='3D Scatter Plot of Vector Store Content',
+            scene=dict(
+                xaxis_title='PCA Component 1',
+                yaxis_title='PCA Component 2',
+                zaxis_title='PCA Component 3'
+            ),
+            width=900,
+            height=700,
+        )
+
+        # Show the plot
+        fig.show()
+
+        rp(f"Generated 3D scatter plot with {len(vectors)} points.")
+        """
+        '''     def generate_3d_scatterplot_wandb(self, num_points=1000, run_name="vector_store_visualization"):
+        """
+        Generate a 3D scatter plot of the vector store content using wandb.
+        
+        :param num_points: Maximum number of points to plot (default: 1000)
+        :param run_name: Name for the wandb run (default: "vector_store_visualization")
+        :return: None (logs the plot to wandb)
+        """
+        # Initialize a new wandb run
+        wandb.init(project="vector_store_visualization", name=run_name)
+
+        all_docs = self.get_all_documents()
+        
+        if not all_docs:
+            raise ValueError("No documents found in the vector store.")
+        
+        # Extract vectors from documents
+        vectors = []
+        for doc in all_docs:
+            if hasattr(doc, 'embedding') and doc.embedding is not None:
+                vectors.append(doc.embedding)
+            else:
+                vectors.append(self.embeddings.embed_query(doc.page_content))
+        
+        vectors = np.array(vectors)
+        
+        # If we have more vectors than requested points, sample randomly
+        if len(vectors) > num_points:
+            indices = np.random.choice(len(vectors), num_points, replace=False)
+            vectors = vectors[indices]
+        
+        # Perform PCA to reduce to 3 dimensions
+        pca = PCA(n_components=3)
+        vectors_3d = pca.fit_transform(vectors)
+        
+        # Create the 3D scatter plot data
+        data = [[x, y, z] for x, y, z in vectors_3d]
+        import plotly.express as px
+        df = px.data.iris()
+        fig = px.scatter_3d(df, x='sepal_length', y='sepal_width', z='petal_width',
+                            color='petal_length', symbol='species')
+        # Log the 3D scatter plot to wandb
+
+        table = wandb.Table(data=data, columns=["x", "y", "z"])
+        wandb.log({'scatter-plot1': wandb.plot.scatter(data, x='X', y='Y', z='Z',title="AdvancedVectorStore",split_table=True)})
+        """ wandb.log({"vector_store_3d_scatter": wandb.plot.scatter(
+            data,
+            "PCA Component 1",
+            "PCA Component 2",
+            "PCA Component 3",
+            title="3D Scatter Plot of Vector Store Content"
+        )}) """
+        
+        rp(f"[Generated 3D scatter plot with {len(vectors)} points. Logged to wandb.]")
+
+        # Finish the wandb run
+        wandb.finish()
+        '''
     def load_documents_folder(self, folder_path):
-            rp("Loading documents from cloned repository")
+            rp("[Loading documents from cloned repository]")
             self.load_documents(folder_path)
-            rp(f"Splitting {len(self.documents)} documents")
+            self.document_count=len(self.documents)
+            rp(f"Splitting {self.document_count} documents")
             self.split_documents()
-            rp(f"Adding {len(self.documents)} document chunks to vectorstore")
+            self.chunk_count=len(self.documents)
+            rp(f"Adding {self.chunk_count} document chunks to vectorstore")
             self.add_documents(self.documents)
 
     def load_github_repo(self, repo_url: str) -> None:
@@ -509,86 +806,46 @@ class AdvancedVectorStore:
             rp(f"Repository {repo_url} already exists in {new_repo_path}")
             self.load_vectorstore(self.storage_dir)
 
-    def get_all_documents(self) -> List[Document]:
+
+    def get_all_documents(self):
         """
-        Get all documents from the vectorstore.
+        Fetch all documents from the document store.
+        """
+        all_docs = []
         
-        :return: List of all documents in the vectorstore
-        """
-        if not self.vectorstore:
-            raise ValueError("Vectorstore not initialized. Call create_vectorstore() first.")
-        
-        # This assumes FAISS vectorstore has a method to retrieve all documents
-        # You might need to adjust this based on the actual implementation
-        all=self.vectorstore.similarity_search(query='* *',k=10000)
-        return all
+        # Number of vectors in the index
+        num_vectors = self.index.ntotal
 
-    def generate_3d_scatterplot(self, num_points=1000):
-        """
-        Generate a 3D scatter plot of the vector store content.
-        
-        :param num_points: Maximum number of points to plot (default: 1000)
-        :return: None (displays the plot)
-        """
-        all_docs = self.get_all_documents()
+        # Assuming 'd' is the dimensionality of the vectors
+        d = self.index.d
+        #rp(f"D:{d}")
+        # Retrieve all vectors (this part is straightforward if you have access to the original vectors)
+        retrieved_vectors = np.empty((num_vectors, d), dtype='float32')
+        for i in range(num_vectors):
+            retrieved_vectors[i] = self.index.reconstruct(i)
 
-        if not all_docs:
-            raise ValueError("No documents found in the vector store.")
+        # Assuming you have a way to get the document IDs
+        # In a real scenario, you would maintain a mapping of FAISS index positions to document IDs
+        # Example: you might have an attribute like 'self.doc_ids' which is a list of IDs
+        retrieved_ids = self.doc_ids[:num_vectors]  # Ensure you have this attribute properly maintained
+        #rp(f"Retrieved ids{retrieved_ids}")
+        # Fetch documents using the retrieved IDs
+        retrieved_docs = [self.docstore.search(doc_id) for doc_id in retrieved_ids]
 
-        # Extract vectors from documents
-        vectors = []
-        for doc in all_docs:
-            if hasattr(doc, 'embedding') and doc.embedding is not None:
-                vectors.append(doc.embedding)
-            else:
-                vectors.append(self.embeddings.embed_query(doc.page_content))
+        # Collect all documents
+        all_docs.extend(retrieved_docs)
 
-        vectors = np.array(vectors)
+        #for doc_id, doc in zip(retrieved_ids, retrieved_docs):
+            #rp(f"ID: {doc_id}, Document.page_content: {doc.page_content}, Document.metadata: {doc.metadata}")
 
-        # If we have more vectors than requested points, sample randomly
-        if len(vectors) > num_points:
-            indices = np.random.choice(len(vectors), num_points, replace=False)
-            vectors = vectors[indices]
+        return all_docs
 
-        # Perform PCA to reduce to 3 dimensions
-        pca = PCA(n_components=3)
-        vectors_3d = pca.fit_transform(vectors)
 
-        # Create the 3D scatter plot
-        fig = go.Figure(data=[go.Scatter3d(
-            x=vectors_3d[:, 0],
-            y=vectors_3d[:, 1],
-            z=vectors_3d[:, 2],
-            mode='markers',
-            marker=dict(
-                size=5,
-                color=vectors_3d[:, 2],  # Color by z-dimension
-                colorscale='Viridis',
-                opacity=0.8
-            )
-        )])
-
-        # Update layout
-        fig.update_layout(
-            title='3D Scatter Plot of Vector Store Content',
-            scene=dict(
-                xaxis_title='PCA Component 1',
-                yaxis_title='PCA Component 2',
-                zaxis_title='PCA Component 3'
-            ),
-            width=900,
-            height=700,
-        )
-
-        # Show the plot
-        fig.show()
-
-        rp(f"Generated 3D scatter plot with {len(vectors)} points.")
     def test_chat(self,text,context='This is a chat with a nice Senior programmer.',history='Your Birth as fresh outof the box agent.'):
         
         self.set_bot_role(context=context,history=history)
         
-        return self.llm_chatbot(text)
+        return self.chatbot_llm(text)
     def chat(self, message: str) -> str:
         """
         Send a message to the HugChat bot and get a response.
@@ -596,27 +853,27 @@ class AdvancedVectorStore:
         :param message: The message to send to the bot
         :return: The bot's response
         """
-        if not self.llm_chatbot:
+        if not self.chatbot_llm:
             raise ValueError("HugChat bot not initialized. Provide email and password when creating AdvancedVectorStore.")
-        return self.llm_chatbot.chat(message)
+        return self.chatbot_llm.chat(message)
 
     def setup_speech_recognition(self):
         """Set up speech recognition for the HugChat bot."""
-        if not self.llm_chatbot:
+        if not self.chatbot_llm:
             raise ValueError("HugChat bot not initialized. Provide email and password when creating AdvancedVectorStore.")
-        self.llm_chatbot.setup_speech_recognition()
+        self.chatbot_llm.setup_speech_recognition()
 
     def setup_tts(self, model_name="tts_models/en/ljspeech/fast_pitch"):
         """Set up text-to-speech for the HugChat bot."""
-        if not self.llm_chatbot:
+        if not self.chatbot_llm:
             raise ValueError("HugChat bot not initialized. Provide email and password when creating AdvancedVectorStore.")
-        self.llm_chatbot.setup_tts(model_name)
+        self.chatbot_llm.setup_tts(model_name)
 
     def voice_chat(self):
         """
         Initiate a voice chat session with the HugChat bot.
         """
-        if not self.llm_chatbot or not hasattr(self.llm_chatbot, 'recognizer') or not hasattr(self.llm_chatbot, 'tts'):
+        if not self.chatbot_llm or not hasattr(self.chatbot_llm, 'recognizer') or not hasattr(self.chatbot_llm, 'tts'):
             raise ValueError("Speech recognition and TTS not set up. Call setup_speech_recognition() and setup_tts() first.")
 
         rp("Voice chat initiated. Speak your message (or say 'exit' to end the chat).")
@@ -624,10 +881,10 @@ class AdvancedVectorStore:
         while True:
             with speech_recognition.Microphone() as source:
                 rp("Listening...")
-                audio = self.llm_chatbot.recognizer.listen(source)
+                audio = self.chatbot_llm.recognizer.listen(source)
 
             try:
-                user_input = self.llm_chatbot.recognizer.recognize_google(audio)
+                user_input = self.chatbot_llm.recognizer.recognize_google(audio)
                 rp(f"You said: {user_input}")
 
                 if user_input.lower() == 'exit':
@@ -639,7 +896,7 @@ class AdvancedVectorStore:
 
                 # Generate speech from the bot's response
                 speech_file = "bot_response.wav"
-                self.llm_chatbot.tts.tts_to_file(text=response, file_path=speech_file)
+                self.chatbot_llm.tts.tts_to_file(text=response, file_path=speech_file)
                 playsound(speech_file)
                 os.remove(speech_file)  # Clean up the temporary audio file
 
@@ -663,15 +920,16 @@ class AdvancedVectorStore:
         chain = self.create_retrieval_chain(prompt, retriever)
         result = self.run_retrieval_chain(chain, query)
         return result['answer']
+    
     def search_web(self):
         search_query = input("Enter your web search query: ")
         future_date = "July 12, 2024"
         search_url = f"https://www.google.com/search?q={search_query}+before:{future_date}"
         webbrowser.open(search_url)
-        print(f"Search results for '{search_query}' on {future_date}:")
-        print("=" * 50)
-        print(search_url)
-        print("=" * 50)
+        rp(f"Search results for '{search_query}' on {future_date}:")
+        rp("=" * 50)
+        rp(search_url)
+        rp("=" * 50)
 
     def advanced_rag_chatbot(self):
         rp("Welcome to the Advanced RAG Chatbot!")
@@ -684,8 +942,12 @@ class AdvancedVectorStore:
             self.vectorstore, self.docstore, self.index = self.create_indexed_vectorstore(self.chunk_size)
 
         # Create a compressed retriever
-        compressed_retriever = self.get_contextual_compression_retriever(k=5, similarity_threshold=0.75)
-
+        # compressed_retriever = self.get_contextual_compression_retriever(k=5, similarity_threshold=0.75)
+        mode='basic'
+        k=5
+        similarity_threshold=0.75
+        retriever = self.set_current_retriever(mode=mode, k=k, sim_rate=similarity_threshold)
+        #basic_retriever = self.get_basic_retriever(k=4)
         # Initialize conversation history
         conversation_history = []
 
@@ -695,19 +957,17 @@ class AdvancedVectorStore:
                 rp("Thank you for using the Advanced RAG Chatbot. Goodbye!")
                 break
 
-            # Step 1: Retrieve relevant documents
-            retrieved_docs = compressed_retriever.get_relevant_documents(user_input)
+            rp("# Step 1: Retrieve relevant documents")
+            retrieved_docs = self.get_basic_retriever(k=4).get_relevant_documents(user_input)
 
-            # Step 2: Prepare context from retrieved documents
+            rp("# Step 2: Prepare context from retrieved documents")
             context = "\n".join([doc.page_content for doc in retrieved_docs])
 
-            # Step 3: Prepare the prompt
-            prompt = prompts['default_rag_prompt'].replace("<<<VSCONTEXT>>",context).replace("<<WSCONTEXT>>",' '.join(conversation_history[-5:]))
-            
-
-            # Step 4: Generate response using the chatbot
-            
-            response = self.llm_chatbot(f"{prompt}\nUser Query: {user_input}\n")
+            rp("# Step 3: Prepare the prompt")
+            #prompt = prompts['default_rag_prompt']
+            self.set_bot_role(context=context, history=' '.join(conversation_history[-5:]))
+            rp("# Step 4: Generate response using the chatbot")
+            response = self.chatbot_llm(f"User:{user_input}\n")
 
             rp(f"Chatbot: {response}")
 
@@ -717,15 +977,17 @@ class AdvancedVectorStore:
 
             # Step 5: Demonstrate use of individual components
             rp("\nAdditional Information:")
-            rp(f"- Number of documents in docstore: {len(self.docstore.docstore)}")
+            rp(f'- Number of documents in docstore: {len(self.docstore.search("* *"))}')
             rp(f"- Number of vectors in index: {self.index.ntotal}")
             
             # Demonstrate direct use of vectorstore for similarity search
             similar_docs = self.vectorstore.similarity_search(user_input, k=1)
+            similar_docs = self.vectorstore.similarity_search_with_relevance_scores(user_input,k=3)
             if similar_docs:
                 rp(f"- Most similar document: {similar_docs[0].metadata.get('source', 'Unknown')}")
             
             # Generate a 3D scatter plot of the vectorstore content
+            #avs.generate_3d_scatterplot_wandb()
             avs.generate_3d_scatterplot()
             
             # Optional: Add user feedback loop
@@ -751,24 +1013,30 @@ if __name__ == "__main__":
     #avs.create_indexed_vectorstore()
 
     # Clone a GitHub repository and load its contents
-    
-    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/langchain_huggingface")
+    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/test_input")  
+    #avs.chatbot_llm.load_documents("/nr_ywo/coding/voice_chat_rag_web/test_input")
     # avs.load_github_repo("https://github.com/bxck75/voice_chat_rag_web")
     avs.save_vectorstore(path=avs.storage_dir)
     avs.load_vectorstore(path=avs.storage_dir)
     # rp document and chunk counts
-    rp(f"Total documents: {avs.document_count}")
-    rp(f"Total chunks: {avs.chunk_count}")
-    retriever=avs.get_basic_retriever()
-    retriever_comp=avs.get_multi_query_compression_retriever()
-    q="Demonstrate your knowledge of faiss in a python  OOP example script"
+    #rp(f"Total documents: {avs.chunk_count / avs.chunk_size}")
+    #rp(f"Total chunks: {avs.chunk_count}")
+    #avs.logger.info(avs.chatbot_llm.current_model)
+    #avs.logger.info(avs.chatbot_llm.current_system_prompt)
+
+    retriever=avs.set_current_retriever(mode='basic',k=4)
+    comptriever=avs.set_current_retriever(mode='compression',k=4,sim_rate=0.87)
+    timetriever=avs.set_current_retriever(mode='time',k=1)
+
+    q="Demonstrate your knowledge of developing advanced AI scripts in OOP python. try to come up with cutting edge ideas"
     rel_docs=retriever.invoke(input=q)
+    #okrp(f"[Raw Knowledge Retrieved:{rel_docs}]")
       # Start the advanced RAG chatbot
     avs.advanced_rag_chatbot()
 
     # Perform a RAG chat
     rag_response = avs.rag_chat(query="Explain the concept of neural networks.")
-    rp("RAG chat response:", rag_response)
+    #rp("RAG chat response:", rag_response)
 
     # Set up speech recognition and TTS for voice chat
     #avs.setup_speech_recognition()
