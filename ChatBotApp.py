@@ -63,17 +63,7 @@ from langchain_community.document_loaders import TextLoader
 from TTS.api import TTS
 import time
 from playsound import playsound
-from system_prompts import (default_rag_prompt, story_teller_prompt, todo_parser_prompt,
-                            code_generator_prompt, software_tester_prompt, script_debugger_prompt, iteration_controller_prompt, copilot_prompt)
-prompts={'default_rag_prompt':default_rag_prompt,
-        'story_teller_prompt':story_teller_prompt,
-        'todo_parser_prompt':todo_parser_prompt,
-        'code_generator_prompt':code_generator_prompt,
-        'software_tester_prompt':software_tester_prompt,
-        'script_debugger_prompt':script_debugger_prompt,
-        'iteration_controller_prompt':iteration_controller_prompt,
-        'copilot_prompt':copilot_prompt
-        }
+from system_prompts import __all__ as prompts
 
 from profiler import VoiceProfileManager, VoiceProfile
 
@@ -256,6 +246,7 @@ class ChatbotApp:
             return local_path
         Repo.clone_from(repo_url, local_path)
         return local_path
+    
     def glob_recursive_multiple_extensions(base_dir, extensions):
         all_files = []
         for ext in extensions:
