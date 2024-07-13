@@ -24,9 +24,7 @@ from hugchat import hugchat
 from hugchat.login import Login
 from langchain_core.documents import Document
 
-from langchain_community.llms.huggingface_text_gen_inference import (
-        HuggingFaceTextGenInference,
-    )
+
 from langchain_community.llms.huggingface_endpoint import HuggingFaceEndpoint
 from langchain_community.llms.huggingface_hub import HuggingFaceHub
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -49,7 +47,6 @@ from langchain.retrievers.self_query.base import SelfQueryRetriever
 from langchain.retrievers.document_compressors import LLMChainExtractor, DocumentCompressorPipeline
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from langchain.retrievers.document_compressors import EmbeddingsFilter
-from langchain_community.llms.self_hosted_hugging_face import SelfHostedHuggingFaceLLM
 import plotly.graph_objs as go
 
 
@@ -389,74 +386,7 @@ class AdvancedVectorStore:
         )
         rp("Indexed vectorstore created.")
         return vectorstore, docstore, index
-
-    
-    ''' def generate_3d_scatterplot_wandb(self, num_points=1000, run_name="vector_store_visualization", context_window=0, chat_history_length=0):
-        """
-        Generate a 3D scatter plot of the vector store content using plotly and log it to wandb.
-        Also tracks context window and chat history length.
-        :param num_points: Maximum number of points to plot (default: 1000)
-        :param run_name: Name for the wandb run (default: "vector_store_visualization")
-        :param context_window: Size of the context window
-        :param chat_history_length: Length of the chat history
-        :return: None (logs the plot to wandb)
-        """
-        # Initialize a new wandb run
-        wandb.init(project="vector_store_visualization", name=run_name)
-        all_docs = self.get_all_documents()
-        if not all_docs:
-            raise ValueError("No documents found in the vector store.")
-        # Extract vectors from documents
-        vectors = []
-        for doc in all_docs:
-            if hasattr(doc, 'embedding') and doc.embedding is not None:
-                vectors.append(doc.embedding)
-            else:
-                vectors.append(self.embeddings.embed_query(doc.page_content))
-        vectors = np.array(vectors)
-        # If we have more vectors than requested points, sample randomly
-        if len(vectors) > num_points:
-            indices = np.random.choice(len(vectors), num_points, replace=False)
-            vectors = vectors[indices]
-        # Perform PCA to reduce to 3 dimensions
-        pca = PCA(n_components=3)
-        vectors_3d = pca.fit_transform(vectors)
-        # Create the 3D scatter plot using plotly
-        trace = go.Scatter3d(
-            x=vectors_3d[:, 0],
-            y=vectors_3d[:, 1],
-            z=vectors_3d[:, 2],
-            mode='markers',
-            marker=dict(
-                size=5,
-                color=vectors_3d[:, 2],
-                colorscale='Viridis',
-                opacity=0.8
-            )
-        )
-        layout = go.Layout(
-            title='3D Scatter Plot of Vector Store Content',
-            scene=dict(
-                xaxis_title='PCA Component 1',
-                yaxis_title='PCA Component 2',
-                zaxis_title='PCA Component 3'
-            ),
-            width=900,
-            height=700,
-        )
-        fig = go.Figure(data=[trace], layout=layout)
-        # Log the plot to wandb
-        wandb.log({"vector_store_3d_scatter": wandb.plotly.plot(fig)})
-        # Log context window and chat history length
-        wandb.log({
-            "context_window": context_window,
-            "chat_history_length": chat_history_length
-        })
-        rp(f"Generated 3D scatter plot with {len(vectors)} points. Logged to wandb.")
-        rp(f"Context Window: {context_window}, Chat History Length: {chat_history_length}")
-        # Finish the wandb run
-        wandb.finish() '''
-       
+           
     def get_self_query_retriever(self, k: int = 4) -> SelfQueryRetriever:
         """Get a SelfQueryRetriever."""
         if not self.vectorstore:
@@ -694,82 +624,7 @@ class AdvancedVectorStore:
 
         # Finish the wandb run
         wandb.finish()
-        """ 
-        # Update layout
-        fig.update_layout(
-            title='3D Scatter Plot of Vector Store Content',
-            scene=dict(
-                xaxis_title='PCA Component 1',
-                yaxis_title='PCA Component 2',
-                zaxis_title='PCA Component 3'
-            ),
-            width=900,
-            height=700,
-        )
-
-        # Show the plot
-        fig.show()
-
-        rp(f"Generated 3D scatter plot with {len(vectors)} points.")
-        """
-        '''     def generate_3d_scatterplot_wandb(self, num_points=1000, run_name="vector_store_visualization"):
-        """
-        Generate a 3D scatter plot of the vector store content using wandb.
         
-        :param num_points: Maximum number of points to plot (default: 1000)
-        :param run_name: Name for the wandb run (default: "vector_store_visualization")
-        :return: None (logs the plot to wandb)
-        """
-        # Initialize a new wandb run
-        wandb.init(project="vector_store_visualization", name=run_name)
-
-        all_docs = self.get_all_documents()
-        
-        if not all_docs:
-            raise ValueError("No documents found in the vector store.")
-        
-        # Extract vectors from documents
-        vectors = []
-        for doc in all_docs:
-            if hasattr(doc, 'embedding') and doc.embedding is not None:
-                vectors.append(doc.embedding)
-            else:
-                vectors.append(self.embeddings.embed_query(doc.page_content))
-        
-        vectors = np.array(vectors)
-        
-        # If we have more vectors than requested points, sample randomly
-        if len(vectors) > num_points:
-            indices = np.random.choice(len(vectors), num_points, replace=False)
-            vectors = vectors[indices]
-        
-        # Perform PCA to reduce to 3 dimensions
-        pca = PCA(n_components=3)
-        vectors_3d = pca.fit_transform(vectors)
-        
-        # Create the 3D scatter plot data
-        data = [[x, y, z] for x, y, z in vectors_3d]
-        import plotly.express as px
-        df = px.data.iris()
-        fig = px.scatter_3d(df, x='sepal_length', y='sepal_width', z='petal_width',
-                            color='petal_length', symbol='species')
-        # Log the 3D scatter plot to wandb
-
-        table = wandb.Table(data=data, columns=["x", "y", "z"])
-        wandb.log({'scatter-plot1': wandb.plot.scatter(data, x='X', y='Y', z='Z',title="AdvancedVectorStore",split_table=True)})
-        """ wandb.log({"vector_store_3d_scatter": wandb.plot.scatter(
-            data,
-            "PCA Component 1",
-            "PCA Component 2",
-            "PCA Component 3",
-            title="3D Scatter Plot of Vector Store Content"
-        )}) """
-        
-        rp(f"[Generated 3D scatter plot with {len(vectors)} points. Logged to wandb.]")
-
-        # Finish the wandb run
-        wandb.finish()
-        '''
     def load_documents_folder(self, folder_path):
             rp("[Loading documents from cloned repository]")
             self.load_documents(folder_path)
