@@ -28,3 +28,28 @@ Next steps:
 5. **Real-time Feedback**: I can provide real-time feedback on script syntax and semantics to help you catch errors early.
 
 What would you like to focus on first? Do you have any specific questions or areas of concern about the script?
+
+
+
+
+Default
+CohereForAI/c4ai-command-r-plus
+Command R+ is Cohere's latest LLM and is the first open weight model to beat GPT4 in the Chatbot Arena!
+
+meta-llama/Meta-Llama-3-70B-Instruct
+Meta Llama 3 delivers top performance on various benchmarks and introduces new features like better reasoning.
+
+mistralai/Mixtral-8x7B-Instruct-v0.1
+The latest MoE model from Mistral AI! 8x7B and outperforms Llama 2 70B in most benchmarks.
+
+NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO
+Nous Hermes 2 Mixtral 8x7B DPO is the new flagship Nous Research model trained over the Mixtral 8x7B MoE LLM.
+
+01-ai/Yi-1.5-34B-Chat
+Yi-1.5 is an upgraded version of Yi. It is continuously pre-trained on Yi with a high-quality corpus of 500B tokens and fine-tuned on 3M diverse fine-tuning samples.
+
+mistralai/Mistral-7B-Instruct-v0.2
+Mistral 7B is a new Apache 2.0 model, released by Mistral AI that outperforms Llama2 13B in benchmarks.
+
+microsoft/Phi-3-mini-4k-instruct
+Phi-3 Mini-4K-Instruct is a 3.8B parameters, lightweight, state-of-the-art open model built upon datasets used for Phi-2.

@@ -9,7 +9,36 @@ import numpy as np
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain import hub
-
+import os
+import tempfile
+from datetime import datetime
+import webbrowser
+from tkinter import Toplevel
+import warnings
+import faiss,logging
+import numpy as np
+import wandb
+from typing import List, Dict, Any, Optional, Union
+from git import Repo
+import plotly.graph_objects as go
+import numpy as np
+from sklearn.decomposition import PCA
+import requests
+from rich import print as rp
+from rich.progress import Progress, TextColumn, BarColumn, TimeRemainingColumn
+from dotenv import load_dotenv, find_dotenv
+import speech_recognition
+from TTS.api import TTS
+from sklearn.decomposition import PCA
+from playsound import playsound
+from hugchat import hugchat
+from hugchat.login import Login
+from langchain_core.documents import Document
+from langchain_community.llms.huggingface_text_gen_inference import (HuggingFaceTextGenInference)
+from langchain_community.llms.huggingface_endpoint import HuggingFaceEndpoint
+from langchain_community.llms.huggingface_hub import HuggingFaceHub
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
 from langchain_community.document_loaders import DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter,Language
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -24,6 +53,39 @@ from langchain.retrievers.document_compressors import DocumentCompressorPipeline
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from langchain_text_splitters import CharacterTextSplitter
 from langchain.retrievers.document_compressors import EmbeddingsFilter
+from langchain.retrievers import TimeWeightedVectorStoreRetriever
+from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain.text_splitter import RecursiveCharacterTextSplitter, Language,CharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.vectorstores.base import VectorStore
+from langchain.retrievers import MultiQueryRetriever, ContextualCompressionRetriever
+from langchain.retrievers.self_query.base import SelfQueryRetriever
+from langchain.retrievers.document_compressors import LLMChainExtractor, DocumentCompressorPipeline
+from langchain_community.document_transformers import EmbeddingsRedundantFilter
+from langchain.retrievers.document_compressors import EmbeddingsFilter
+from langchain_community.llms.self_hosted_hugging_face import SelfHostedHuggingFaceLLM
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    UnstructuredHTMLLoader,
+    UnstructuredWordDocumentLoader,
+    TextLoader,
+    PythonLoader
+)
+import plotly.graph_objs as go
+
+
+from langchain.chains import LLMChain
+# Load environment variables
+load_dotenv(find_dotenv())
+warnings.filterwarnings("ignore")
+os.environ['FAISS_NO_AVX2'] = '1'
+os.environ["USER_AGENT"] = os.getenv("USER_AGENT")
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+wandb.require("core")
+# Import system prompts
+from system_prompts import __all__ as prompts
+
 
 class DocumentProcessor:
     def __init__(self, embedding_model_name: str = 'sentence-transformers/all-MiniLM-L6-v2', llm: BaseLLM = None):
@@ -88,8 +150,6 @@ class DocumentProcessor:
         self.vectorstore = FAISS.load(self.persistant_dir)
         
     def create_vectorstore(self, documents: list):
-        #self.vectorstore = Chroma.from_documents(documents, embeddings, collection_name=collection_name, persist_directory=persist_directory)
-        #self.vectorstore = Chroma(documents=documents, embedding=self.embeddings, collection_name=collection_name, persist_directory=persist_directory)
         self.vectorstore = FAISS.from_documents(documents, self.embeddings) 
         self.vectorstore.save(os.path.join(self.persistant_dir))
         # Store document names and their IDsself.embeddings

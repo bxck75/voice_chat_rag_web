@@ -539,7 +539,7 @@ class AdvancedVectorStore:
         else:
             retriever = self.get_basic_retriever(k)
 
-        rp(retriever.get_prompts)
+        #rp(retriever.get_prompts)
         return retriever
 
     def search(self, query: str, mode='basic', retriever: Optional[Any] = None, k: int = 4, sim_rate: float = 0.78) -> List[Document]:
@@ -568,15 +568,17 @@ class AdvancedVectorStore:
 
                 metadata["last_accessed_at"] = datetime.now()
                 new_doc = Document(page_content=doc.page_content, metadata=metadata)
+                nr=id
                 id = str(uuid.uuid4())
  
-                self.logger.info(f"Added doc to docstore with id:{id}")
+                
                 self.vectorstore.docstore.add({id: new_doc})
                 
                 self.doc_ids.append(id)
                 self.set_current_retriever(mode='time', k=1).add_documents([new_doc])
                 total = self.index.ntotal
-                #self.logger.info(f"Added doc to vectorstore{new_doc.metadata['last_accessed_at']} with {total} id's so far.")
+                #self.logger.info(f"Added doc to vectorstore {new_doc.metadata['last_accessed_at']} with {total} id's so far.")
+                self.logger.info(f"Added doc to docstore[{nr}/{len(self.documents)}] with Id:{id} Path:{new_doc.metadata['source']}")
                 progress.update(task, advance=1)
 
         rp(f"Added {len(documents)} documents to the vectorstore with index in doc_ids.")
@@ -982,9 +984,10 @@ class AdvancedVectorStore:
             
             # Demonstrate direct use of vectorstore for similarity search
             similar_docs = self.vectorstore.similarity_search(user_input, k=1)
-            similar_docs = self.vectorstore.similarity_search_with_relevance_scores(user_input,k=3)
+            similar_docs = self.vectorstore.similarity_search_with_relevance_scores(user_input,k=1)
             if similar_docs:
-                rp(f"- Most similar document: {similar_docs[0].metadata.get('source', 'Unknown')}")
+                rp(type(similar_docs))
+                rp(f"-[Most similar document: [{similar_docs[0].metadata.get('source', 'Unknown')}]]-")
             
             # Generate a 3D scatter plot of the vectorstore content
             #avs.generate_3d_scatterplot_wandb()
@@ -1013,7 +1016,12 @@ if __name__ == "__main__":
     #avs.create_indexed_vectorstore()
 
     # Clone a GitHub repository and load its contents
-    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/test_input")  
+    
+    # avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/huggingface_hub/inference")  
+    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/hugchat")  
+    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/langchain/agents")  
+    avs.load_documents_folder("/nr_ywo/coding/voice_chat_rag_web/venv/lib/python3.10/site-packages/langchain_experimental/autonomous_agents")  
+ 
     #avs.chatbot_llm.load_documents("/nr_ywo/coding/voice_chat_rag_web/test_input")
     # avs.load_github_repo("https://github.com/bxck75/voice_chat_rag_web")
     avs.save_vectorstore(path=avs.storage_dir)
@@ -1035,7 +1043,7 @@ if __name__ == "__main__":
     avs.advanced_rag_chatbot()
 
     # Perform a RAG chat
-    rag_response = avs.rag_chat(query="Explain the concept of neural networks.")
+    #rag_response = avs.rag_chat(query="Explain the concept of neural networks.")
     #rp("RAG chat response:", rag_response)
 
     # Set up speech recognition and TTS for voice chat
