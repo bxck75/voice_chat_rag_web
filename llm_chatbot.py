@@ -11,7 +11,6 @@ from rich import print as rp
 from hugchat.login import Login
 from dotenv import load_dotenv,find_dotenv
 import speech_recognition
-from TTS.api import TTS
 from git import Repo
 import time
 from playsound import playsound
@@ -43,7 +42,7 @@ prompts={'default_rag_prompt':default_rag_prompt,
 
 load_dotenv(find_dotenv())
 warnings.filterwarnings("ignore")
-os.environ["USER_AGENT"] = os.getenv("USER_AGENT")
+token = os.getenv("HF_TOKEN")
 
 class LLMChatBot:
     def __init__(self, email, password, cookie_path_dir='./cookies/',default_llm=1):
@@ -68,7 +67,7 @@ class LLMChatBot:
         self.create_vectorstore_from_github()
       
         self.setup_retriever()
-        self.setup_tts()
+        #self.setup_tts()
         self.setup_speech_recognition()
 
     def login(self):
@@ -115,8 +114,8 @@ class LLMChatBot:
         for d in self.dirs:
             os.makedirs(d, exist_ok=True)
 
-    def setup_tts(self, model_name="tts_models/en/ljspeech/fast_pitch"):
-        self.tts = TTS(model_name=model_name)
+    #def setup_tts(self, model_name="tts_models/en/ljspeech/fast_pitch"):
+        #self.tts = TTS(model_name=model_name)
 
     def __call__(self, text, system_prompt=""): # llama 3
         self.conv_id = self.chatbot.new_conversation(system_prompt=system_prompt, modelIndex=self.current_model, switch_to=True)
@@ -186,7 +185,7 @@ class LLMChatBot:
     def optimized_tts(self, text: str, output_file: str = "output.wav", speaking_rate: float = 3) -> str:
         start_time = time.time()
 
-        self.tts.tts_to_file(
+        '''self.tts.tts_to_file(
             text=text,
             emotion='scared',
             file_path=output_file,
@@ -195,7 +194,7 @@ class LLMChatBot:
             language=self.tts.languages[0] if self.tts.languages else None,
             speed=speaking_rate,
             split_sentences=True
-        )
+        )'''
 
         end_time = time.time()
         print(f"TTS generation took {end_time - start_time:.2f} seconds")

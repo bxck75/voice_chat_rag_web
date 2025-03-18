@@ -56,7 +56,9 @@ load_dotenv(find_dotenv())
 warnings.filterwarnings("ignore")
 os.environ['FAISS_NO_AVX2'] = '1'
 os.environ["USER_AGENT"] = os.getenv("USER_AGENT")
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+email =     os.getenv("EMAIL")
+password =  os.getenv("PASSWD")
+token =     os.getenv("HF_TOKEN")
 wandb.require("core")
 # Import system prompts
 from system_prompts import __all__ as prompts
@@ -69,9 +71,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 
 class LLMChatBot:
-    def __init__(self, email, password, cookie_path_dir='./cookies/', default_llm=1, default_system_prompt='default_rag_prompt'):
-        self.email = email
-        self.password = password
+    def __init__(self, cookie_path_dir='./cookies/', default_llm=1, default_system_prompt='default_rag_prompt'):
+
         self.current_model = 1
         self.current_system_prompt=default_system_prompt
         self.cookie_path_dir = cookie_path_dir
@@ -97,7 +98,7 @@ class LLMChatBot:
 
     def login(self):
         rp("Attempting to log in...")
-        sign = Login(self.email, self.password)
+        sign = Login(email, password)
         try:
             cookies = sign.login(cookie_dir_path=self.cookie_path_dir, save_cookies=True)
             rp("Login successful!")
@@ -121,8 +122,8 @@ class LLMChatBot:
             return
         
         login_data = {
-            'email': self.email,
-            'password': self.password,
+            'email': email,
+            'password': password,
             'csrf_token': csrf_token
         }
         
